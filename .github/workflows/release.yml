@@ -1,0 +1,160 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Release Package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: arm64
+            name: wallpanel-mqtt-bridge-linux-arm64
+          - goos: linux
+            goarch: arm
+            goarm: 7
+            name: wallpanel-mqtt-bridge-linux-armv7
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Verify and download dependencies
+        run: |
+          go mod verify
+          go mod download
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          GOARM: ${{ matrix.goarm }}
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          echo "Building version: $VERSION"
+          
+          go build \
+            -o wallpanel-mqtt-bridge \
+            -ldflags="-s -w -X main.FirmwareVersion=$VERSION" \
+            -trimpath \
+            .
+          chmod +x wallpanel-mqtt-bridge
+          
+          echo "Binary built successfully"
+
+      - name: Create release package
+        run: |
+          # Create package directory
+          mkdir -p ${{ matrix.name }}
+          
+          # Copy binary
+          cp wallpanel-mqtt-bridge ${{ matrix.name }}/
+          
+          # Copy configuration files
+          cp config.json ${{ matrix.name }}/
+          cp wallpanel-mqtt-bridge.service ${{ matrix.name }}/
+          cp install.sh ${{ matrix.name }}/
+          cp README.md ${{ matrix.name }}/
+          
+          # Make install script executable
+          chmod +x ${{ matrix.name }}/install.sh
+          
+          # Create tarball
+          tar -czf ${{ matrix.name }}.tar.gz ${{ matrix.name }}
+          
+          # List contents for verification
+          echo "Package contents:"
+          tar -tzf ${{ matrix.name }}.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.name }}.tar.gz
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release
+          find ./artifacts -name "*.tar.gz" -exec cp {} ./release/ \;
+          ls -lh ./release/
+
+      - name: Generate checksums
+        run: |
+          cd release
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create Release Notes
+        run: |
+          cat > release_notes.md << 'EOF'
+          ## Installation
+          
+          Download the package for your Raspberry Pi:
+          - **Raspberry Pi 4/5** (64-bit): `wallpanel-mqtt-bridge-linux-arm64.tar.gz`
+          - **Raspberry Pi 3/Zero 2/W** (32-bit): `wallpanel-mqtt-bridge-linux-armv7.tar.gz`
+          
+          ### Quick Install
+          
+          ```bash
+          # Download and extract (replace with your architecture)
+          wget https://github.com/r0bb10/wallpanel-mqtt-bridge/releases/download/${{ github.ref_name }}/wallpanel-mqtt-bridge-linux-arm64.tar.gz
+          tar -xzf wallpanel-mqtt-bridge-linux-arm64.tar.gz
+          cd wallpanel-mqtt-bridge-linux-arm64
+          
+          # Run installer
+          sudo ./install.sh
+          
+          # Configure the GPIO chip (usually 'gpiochip0')
+          sudo nano /opt/wallpanel-mqtt-bridge/config.json
+          
+          # Start service
+          sudo systemctl enable wallpanel-mqtt-bridge
+          sudo systemctl start wallpanel-mqtt-bridge
+          ```
+          
+          ### Important: GPIO Chip Configuration
+          
+          - Set `"chip": "gpiochip0"` (default for most Raspberry Pi models)
+          
+          EOF
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.ref_name }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            release/*.tar.gz
+            release/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
