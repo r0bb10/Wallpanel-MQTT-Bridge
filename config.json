@@ -38,7 +38,7 @@
       "zero": [642, 488],
       "ptrail": 638,
       "repeat": [9102, 2199],
-      "gap": 80000,
+      "gap": 150000,
       "frequency": 38000,
       "codes": {
         "KEY_BRIGHTNESSUP": {
