@@ -1,0 +1,26 @@
+[Unit]
+Description=Wallpanel MQTT Bridge for Home Assistant
+Documentation=https://github.com/r0bb10/wallpanel-mqtt-bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=PLACEHOLDER_USER
+Group=PLACEHOLDER_GROUP
+WorkingDirectory=/opt/wallpanel-mqtt-bridge
+ExecStart=/opt/wallpanel-mqtt-bridge/wallpanel-mqtt-bridge
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5
+
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/dev/gpiochip0 /dev/lirc0 /run
+CapabilityBoundingSet=CAP_SYS_BOOT CAP_SETGID CAP_SETUID
+AmbientCapabilities=CAP_SYS_BOOT CAP_SETGID CAP_SETUID
+
+[Install]
+WantedBy=multi-user.target

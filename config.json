@@ -1,0 +1,115 @@
+{
+  "mqtt": {
+    "broker": "tcp://localhost:1883",
+    "user": "mqtt_user",
+    "password": "mqtt_password",
+    "topic_prefix": "wallpanel/wallpanel-mqtt-bridge"
+  },
+  "chip": "gpiochip0",
+  "outputs": [
+    {
+      "name": "relay1",
+      "pin": 23,
+      "inverted": true,
+      "ha_name": "GPIO Relay 1",
+      "ha_class": "switch",
+      "enabled": true
+    }
+  ],
+  "inputs": [
+    {
+      "name": "button1",
+      "pin": 26,
+      "pullup": true,
+      "inverted": true,
+      "linked_output": "relay1",
+      "ha_name": "GPIO Button 1",
+      "enabled": true
+    }
+  ],
+  "ir_remotes": [
+    {
+      "name": "UPERFECT",
+      "device": "/dev/lirc0",
+      "bits": 32,
+      "flags": "SPACE_ENC|CONST_LENGTH",
+      "header": [9117, 4434],
+      "one": [642, 1624],
+      "zero": [642, 488],
+      "ptrail": 638,
+      "repeat": [9102, 2199],
+      "gap": 150000,
+      "frequency": 38000,
+      "codes": {
+        "KEY_BRIGHTNESSUP": {
+          "code": "0x61D66897",
+          "ha_name": "Brightness Up",
+          "icon": "mdi:brightness-5"
+        },
+        "KEY_BRIGHTNESSUP_MAX": {
+          "code": "0x61D66897",
+          "send_mode": "hold",
+          "duration": 3000,
+          "ha_name": "Brightness Max",
+          "icon": "mdi:brightness-7"
+        },
+        "KEY_BRIGHTNESSDOWN": {
+          "code": "0x61D628D7",
+          "ha_name": "Brightness Down",
+          "icon": "mdi:brightness-4"
+        },
+        "KEY_BRIGHTNESSDOWN_MIN": {
+          "code": "0x61D628D7",
+          "send_mode": "hold",
+          "duration": 3000,
+          "ha_name": "Brightness Min",
+          "icon": "mdi:brightness-1"
+        },
+        "KEY_POWER": {
+          "code": "0x61D608F7",
+          "enabled": false,
+          "ha_name": "Power",
+          "icon": "mdi:power"
+        },
+        "KEY_MUTE": {
+          "code": "0x61D648B7",
+          "enabled": false,
+          "ha_name": "Mute",
+          "icon": "mdi:volume-mute"
+        }
+      }
+    }
+  ],
+  "system_controls": {
+    "reboot_host": {
+      "enabled": true,
+      "ha_name": "Reboot Wallpanel",
+      "icon": "mdi:restart"
+    },
+    "restart_services": [
+      {
+        "service": "wallpanel-mqtt-bridge",
+        "action": "reload",
+        "enabled": true,
+        "ha_name": "Reload Bridge",
+        "icon": "mdi:refresh"
+      },
+      {
+        "service": "greetd",
+        "action": "restart",
+        "enabled": true,
+        "ha_name": "Restart Kiosk",
+        "icon": "mdi:monitor-dashboard"
+      }
+    ],
+    "custom_commands": [
+      {
+        "name": "restart_labwc",
+        "command": "pkill -u $USER labwc",
+        "enabled": true,
+        "ha_name": "Restart Compositor",
+        "icon": "mdi:window-restore"
+      }
+    ]
+  }
+}
