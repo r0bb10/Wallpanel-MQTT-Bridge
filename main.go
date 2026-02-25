@@ -47,10 +47,10 @@ const (
 
 // Timing constants
 const (
-	debounceStabilityTime = 100 * time.Millisecond // Button debounce stability window
-	defaultHoldDuration   = 500                     // Default IR hold duration in milliseconds
-	irCodeDelay           = 100 * time.Millisecond // Delay between IR code transmissions
-	defaultIRGap          = 100000                  // Default gap between IR transmissions in microseconds
+	defaultDebounceMs   = 10                        // Default kernel debounce period in milliseconds
+	defaultHoldDuration = 500                        // Default IR hold duration in milliseconds
+	irCodeDelay         = 100 * time.Millisecond    // Delay between IR code transmissions
+	defaultIRGap        = 100000                    // Default gap between IR transmissions in microseconds
 )
 
 // ============================================================================
@@ -91,6 +91,7 @@ type InputConfig struct {
 	Pin          int    `json:"pin"`           // GPIO pin number
 	PullUp       bool   `json:"pullup"`        // Enable internal pull-up resistor
 	Inverted     bool   `json:"inverted"`      // If true, LOW=active
+	DebounceMs   int    `json:"debounce_ms,omitempty"` // Kernel debounce period in ms (default 10)
 	LinkedOutput string `json:"linked_output,omitempty"` // Output to toggle on button press
 	HAName       string `json:"ha_name"`       // Display name in Home Assistant
 	HAClass      string `json:"ha_class"`       // HA device class (e.g., "motion")
@@ -366,10 +367,16 @@ func (g *gpioManager) SetupInput(cfg InputConfig, handler func(gpiod.LineEvent))
 		return nil, fmt.Errorf("chip not opened")
 	}
 
+	debounceMs := cfg.DebounceMs
+	if debounceMs <= 0 {
+		debounceMs = defaultDebounceMs
+	}
+
 	opts := []gpiod.LineReqOption{
 		gpiod.AsInput,
 		gpiod.WithBothEdges,
 		gpiod.WithEventHandler(handler),
+		gpiod.WithDebounce(time.Duration(debounceMs) * time.Millisecond),
 	}
 
 	if cfg.PullUp {
@@ -731,13 +738,12 @@ func (e *OutputEntity) createCommandHandler() mqtt.MessageHandler {
 
 // InputEntity represents a GPIO input (button/sensor)
 type InputEntity struct {
-	config      InputConfig
-	gpio        GPIOManager
-	mqtt        MQTTManager
-	line        *gpiod.Line
-	stateTopic  string
+	config          InputConfig
+	gpio            GPIOManager
+	mqtt            MQTTManager
+	line            *gpiod.Line
+	stateTopic      string
 	lastStableState bool
-	lastStableTime  time.Time
 }
 
 // NewInputEntity creates a new input entity
@@ -789,11 +795,10 @@ func (e *InputEntity) Setup(ctx context.Context, mqtt MQTTManager) error {
 	}
 	e.line = line
 
-	// Publish initial state and sync debounce tracker
+	// Publish initial state and sync state tracker
 	val, _ := line.Value()
 	isPressed := getLogicalState(val, e.config.Inverted)
 	e.lastStableState = isPressed
-	e.lastStableTime = time.Now()
 	e.publishState(isPressed)
 
 	return nil
@@ -806,22 +811,13 @@ func (e *InputEntity) Teardown(mqtt MQTTManager) error {
 
 func (e *InputEntity) createEventHandler() func(gpiod.LineEvent) {
 	return func(evt gpiod.LineEvent) {
-		now := time.Now()
 		isPressed := isPressedFromEdge(evt.Type, e.config.Inverted)
 
-		// Check if state has changed from last stable state
+		// Kernel debounce already filters noise; skip duplicate state events
 		if isPressed == e.lastStableState {
-			return // Bounce - same state, ignore
+			return
 		}
-
-		// State has potentially changed - check if it's been stable long enough
-		if !isStableStateChange(now, e.lastStableTime, debounceStabilityTime) {
-			return // Too soon after last stable state change - this is bounce
-		}
-
-		// This is a valid state change!
 		e.lastStableState = isPressed
-		e.lastStableTime = now
 
 		// Log button press only (with friendly name)
 		if isPressed {
@@ -1177,11 +1173,6 @@ func isPressedFromEdge(evtType gpiod.LineEventType, inverted bool) bool {
 		return evtType == gpiod.LineEventFallingEdge
 	}
 	return evtType == gpiod.LineEventRisingEdge
-}
-
-// isStableStateChange checks if enough time has passed since last stable state change
-func isStableStateChange(now, lastStableTime time.Time, debounceTime time.Duration) bool {
-	return now.Sub(lastStableTime) >= debounceTime
 }
 
 // getDeviceInfo returns the device information payload for Home Assistant discovery
