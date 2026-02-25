@@ -789,9 +789,11 @@ func (e *InputEntity) Setup(ctx context.Context, mqtt MQTTManager) error {
 	}
 	e.line = line
 
-	// Publish initial state
+	// Publish initial state and sync debounce tracker
 	val, _ := line.Value()
 	isPressed := getLogicalState(val, e.config.Inverted)
+	e.lastStableState = isPressed
+	e.lastStableTime = time.Now()
 	e.publishState(isPressed)
 
 	return nil
@@ -836,12 +838,17 @@ func (e *InputEntity) createEventHandler() func(gpiod.LineEvent) {
 				return
 			}
 
-			// Get output config to log with friendly name
+			// Get output config to log and publish new state to MQTT
 			cfg, ok := e.gpio.GetOutputConfig(e.config.LinkedOutput)
 			if ok {
 				val, _ := e.gpio.GetOutput(e.config.LinkedOutput)
 				logicalState := getStateString(getLogicalState(val, cfg.Inverted))
 				log.Printf("%s: toggled %s%s%s", cfg.HAName, ColorGreen, logicalState, ColorReset)
+				// Publish updated state so Home Assistant stays in sync
+				stateTopic := fmt.Sprintf("%s/output/%s/state", e.mqtt.TopicPrefix(), e.config.LinkedOutput)
+				if err := e.mqtt.Publish(stateTopic, 0, true, logicalState); err != nil {
+					log.Printf("Failed to publish state for linked output %s: %v", e.config.LinkedOutput, err)
+				}
 			}
 		}
 	}
